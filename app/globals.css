@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --brand-dark: #14532d;
+    --brand-primary: #166534;
+    --brand-medium: #15803d;
+    --brand-light: #22c55e;
+    --brand-accent: #dc2626;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased font-sans min-h-screen selection:bg-brand-soft selection:text-brand-dark;
+  }
+}
+
+/* Print styling untuk Ekspor PDF / Cetak Laporan */
+@media print {
+  nav, footer, .no-print, button, .admin-sidebar {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-shadow-none {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
