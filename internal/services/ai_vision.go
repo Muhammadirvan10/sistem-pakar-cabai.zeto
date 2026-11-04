@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"cabai-care/internal/models"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,7 +33,7 @@ func NewVisionService() VisionService {
 	key := os.Getenv("AI_API_KEY")
 	ver := os.Getenv("AI_MODEL_VERSION")
 	if ver == "" {
-		ver = "v1.0.0-academic"
+		ver = "v1.0.0-roboflow"
 	}
 
 	return &ExternalVisionAdapter{
@@ -40,25 +41,24 @@ func NewVisionService() VisionService {
 		APIKey:       key,
 		ModelVersion: ver,
 		HTTPClient: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout: 30 * time.Second,
 		},
 	}
 }
 
 // ValidateImage memvalidasi format mime dan ukuran file
 func (v *ExternalVisionAdapter) ValidateImage(header []byte, size int64) error {
-	// Batas ukuran 5MB
-	const maxBytes = 5 * 1024 * 1024
+	const maxBytes = 10 * 1024 * 1024 // 10MB
 	if size > maxBytes {
-		return fmt.Errorf("ukuran file melebihi batas maksimum 5MB (ukuran file: %.2f MB)", float64(size)/(1024*1024))
+		return fmt.Errorf("ukuran file melebihi batas maksimum 10MB (ukuran file: %.2f MB)", float64(size)/(1024*1024))
 	}
 
-	// Cek magic number / mime type
 	mime := http.DetectContentType(header)
 	validMimes := map[string]bool{
 		"image/jpeg": true,
 		"image/jpg":  true,
 		"image/png":  true,
+		"image/webp": true,
 	}
 
 	if !validMimes[mime] {
@@ -68,43 +68,53 @@ func (v *ExternalVisionAdapter) ValidateImage(header []byte, size int64) error {
 	return nil
 }
 
-// InferencePayload adalah format standar pengiriman ke endpoint inference eksternal
-type InferencePayload struct {
-	ImageType    string `json:"image_type"` // leaf, fruit, ripeness
-	Filename     string `json:"filename"`
-	ModelVersion string `json:"model_version"`
-	ImageBase64  string `json:"image_base64"`
-}
-
-type ExternalInferenceResponse struct {
-	Status          string             `json:"status"`
-	PredictedClass  string             `json:"predicted_class"`
-	ConfidenceScore float64            `json:"confidence_score"`
-	Probabilities   map[string]float64 `json:"probabilities"`
-	ModelName       string             `json:"model_name"`
-	ModelVersion    string             `json:"model_version"`
-	Recommendations string             `json:"recommendations"`
+type RoboflowDetection struct {
+	Class      string  `json:"class"`
+	Confidence float64 `json:"confidence"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Width      float64 `json:"width"`
+	Height     float64 `json:"height"`
 }
 
 func (v *ExternalVisionAdapter) callExternalInference(imgType string, imageBytes []byte, filename string) (*models.HasilDeteksi, error) {
 	if v.InferenceURL == "" {
-		// Jika endpoint eksternal belum dikonfigurasi, jalankan mode verifikasi demo yang berlabel jelas
 		return v.runDemoMode(imgType, filename)
 	}
 
-	payload := InferencePayload{
-		ImageType:    imgType,
-		Filename:     filename,
-		ModelVersion: v.ModelVersion,
-		ImageBase64:  "", // base64 payload
+	startTime := time.Now()
+	base64Img := base64.StdEncoding.EncodeToString(imageBytes)
+
+	var reqBody []byte
+	var err error
+
+	// Format untuk Roboflow Serverless Workflows
+	if strings.Contains(v.InferenceURL, "roboflow.com") {
+		payload := map[string]interface{}{
+			"inputs": map[string]interface{}{
+				"image": map[string]string{
+					"type":  "base64",
+					"value": base64Img,
+				},
+			},
+		}
+		reqBody, err = json.Marshal(payload)
+	} else {
+		// Format generic inference API
+		payload := map[string]interface{}{
+			"image_type":    imgType,
+			"filename":      filename,
+			"model_version": v.ModelVersion,
+			"image_base64":  base64Img,
+		}
+		reqBody, err = json.Marshal(payload)
 	}
 
-	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("gagal memformat payload AI: %v", err)
 	}
 
-	req, err := http.NewRequest("POST", v.InferenceURL, bytes.NewBuffer(payloadJSON))
+	req, err := http.NewRequest("POST", v.InferenceURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("gagal membuat request AI: %v", err)
 	}
@@ -116,34 +126,138 @@ func (v *ExternalVisionAdapter) callExternalInference(imgType string, imageBytes
 
 	resp, err := v.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("layanan AI tidak merespon: %v", err)
+		// Fallback ke demo mode jika koneksi gagal agar user tidak crash
+		demoRes, _ := v.runDemoMode(imgType, filename)
+		demoRes.CatatanDisclaimer = fmt.Sprintf("[PERINGATAN: Endpoint AI tidak merespon (%v). Menampilkan estimasi verifikasi akademis].", err)
+		return demoRes, nil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("layanan AI mengembalikan status %d: %s", resp.StatusCode, string(body))
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("gagal membaca respon model AI: %v", err)
 	}
 
-	var extResp ExternalInferenceResponse
-	if err := json.NewDecoder(resp.Body).Decode(&extResp); err != nil {
-		return nil, fmt.Errorf("format respon model AI tidak valid: %v", err)
+	if resp.StatusCode != http.StatusOK {
+		demoRes, _ := v.runDemoMode(imgType, filename)
+		demoRes.CatatanDisclaimer = fmt.Sprintf("[Layanan AI status %d: %s. Menggunakan cadangan verifikasi akademis].", resp.StatusCode, string(bodyBytes))
+		return demoRes, nil
 	}
+
+	inferenceDuration := time.Since(startTime).Milliseconds()
+
+	// Parse Roboflow / Generic response
+	var rawResponse interface{}
+	if err := json.Unmarshal(bodyBytes, &rawResponse); err != nil {
+		return nil, fmt.Errorf("respon model AI bukan JSON valid: %v", err)
+	}
+
+	detections := extractDetections(rawResponse)
+
+	if len(detections) == 0 {
+		return &models.HasilDeteksi{
+			ModelName:           "Roboflow RF-DETR / YOLOv8 Cabai",
+			ModelVersion:        v.ModelVersion,
+			KelasTerdeteksi:     "Tidak Ada Objek Teridentifikasi Jelas",
+			ConfidenceScore:     0.0,
+			DistribusiKelas:     map[string]float64{"unidentified": 1.0},
+			WaktuInferensiMs:    inferenceDuration,
+			IsDemoMode:          false,
+			CatatanDisclaimer:   "Model tidak menemukan objek cabai/daun dengan ambang batas keyakinan yang cukup pada citra ini. Harap ambil foto lebih dekat dengan pencahayaan fokus.",
+			RekomendasiTindakan: "Ambil ulang foto dengan jarak lebih dekat (sekitar 10-20 cm), pastikan tidak blur, dan pencahayaan terang merata.",
+		}, nil
+	}
+
+	// Cari deteksi dengan confidence tertinggi
+	var bestDetection RoboflowDetection
+	distribusi := make(map[string]float64)
+
+	for _, d := range detections {
+		if d.Confidence > bestDetection.Confidence {
+			bestDetection = d
+		}
+		if current, exists := distribusi[d.Class]; !exists || d.Confidence > current {
+			distribusi[d.Class] = d.Confidence
+		}
+	}
+
+	recommendation := generateRecommendation(bestDetection.Class)
 
 	return &models.HasilDeteksi{
-		ModelName:           extResp.ModelName,
-		ModelVersion:        extResp.ModelVersion,
-		KelasTerdeteksi:     extResp.PredictedClass,
-		ConfidenceScore:     extResp.ConfidenceScore,
-		DistribusiKelas:     extResp.Probabilities,
+		ModelName:           "Roboflow RF-DETR Cabai (Live Model)",
+		ModelVersion:        v.ModelVersion,
+		KelasTerdeteksi:     bestDetection.Class,
+		ConfidenceScore:     bestDetection.Confidence,
+		DistribusiKelas:     distribusi,
+		WaktuInferensiMs:    inferenceDuration,
 		IsDemoMode:          false,
-		CatatanDisclaimer:   "Hasil prediksi berasal dari model Computer Vision terhubung. Hasil visual merupakan indikasi awal, bukan diagnosis laboratorium tanaman.",
-		RekomendasiTindakan: extResp.Recommendations,
+		CatatanDisclaimer:   "Hasil prediksi berasal dari model Computer Vision Roboflow terhubung secara live. Hasil visual merupakan indikasi awal, bukan diagnosis laboratorium tanaman.",
+		RekomendasiTindakan: recommendation,
 	}, nil
 }
 
-// runDemoMode menghasilkan klasifikasi terstruktur dengan label demo transparan
-// jika pengguna belum mengonfigurasi endpoint model eksternal
+// extractDetections mencari class dan confidence secara rekursif dari respon Roboflow
+func extractDetections(data interface{}) []RoboflowDetection {
+	var results []RoboflowDetection
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Cek jika objek ini sendiri adalah deteksi
+		classVal, hasClass := v["class"]
+		confVal, hasConf := v["confidence"]
+		if hasClass && hasConf {
+			cStr := fmt.Sprintf("%v", classVal)
+			cFloat := 0.0
+			switch cf := confVal.(type) {
+			case float64:
+				cFloat = cf
+			case float32:
+				cFloat = float64(cf)
+			}
+			results = append(results, RoboflowDetection{
+				Class:      cStr,
+				Confidence: cFloat,
+			})
+		}
+
+		// Telusuri children
+		for _, child := range v {
+			results = append(results, extractDetections(child)...)
+		}
+
+	case []interface{}:
+		for _, item := range v {
+			results = append(results, extractDetections(item)...)
+		}
+	}
+
+	return results
+}
+
+func generateRecommendation(class string) string {
+	lower := strings.ToLower(class)
+	if strings.Contains(lower, "antraknosa") || strings.Contains(lower, "patek") {
+		return "Gejala khas Antraknosa (Colletotrichum). Segera petik dan bakar buah yang terserang. Semprotkan fungisida kontak berbahan aktif mankozeb atau klorotalonil."
+	}
+	if strings.Contains(lower, "busuk") || strings.Contains(lower, "rot") {
+		return "Terdeteksi gejala kebusukan buah. Perbaiki drainase lahan agar tidak tergenang, kurangi pupuk nitrogen berlebih, dan aplikasikan fungisida tembaga."
+	}
+	if strings.Contains(lower, "matang") || strings.Contains(lower, "ripe") || strings.Contains(lower, "merah") || strings.Contains(lower, "red") {
+		return "Cabai dalam kondisi matang sempurna. Sangat direkomendasikan untuk segera dipanen dalam 1-2 hari guna menjaga kesegaran dan harga jual terbaik."
+	}
+	if strings.Contains(lower, "mentah") || strings.Contains(lower, "hijau") || strings.Contains(lower, "green") {
+		return "Cabai masih dalam fase mentah/hijau. Biarkan buah tumbuh hingga mencapai bobot dan warna panen yang diinginkan (estimasi 7-14 hari)."
+	}
+	if strings.Contains(lower, "bercak") || strings.Contains(lower, "cercospora") {
+		return "Terdeteksi bercak daun. Pangkas daun bawah yang terinfeksi dan semprotkan fungisida azoksistrobin atau difenokonazol secara merata."
+	}
+	if strings.Contains(lower, "sehat") || strings.Contains(lower, "healthy") {
+		return "Kondisi tanaman cabai tampak sehat dan prima. Pertahankan pemupukan berimbang dan sanitasi gulma rutin di sekitar bedengan."
+	}
+
+	return fmt.Sprintf("Kondisi terdeteksi: %s. Lakukan pengamatan visual lanjutan dan konsultasikan dengan penyuluh pertanian atau gunakan menu Sistem Pakar.", class)
+}
+
 func (v *ExternalVisionAdapter) runDemoMode(imgType, filename string) (*models.HasilDeteksi, error) {
 	lowerName := strings.ToLower(filename)
 
@@ -168,10 +282,10 @@ func (v *ExternalVisionAdapter) runDemoMode(imgType, filename string) (*models.H
 			KelasTerdeteksi: kelas,
 			ConfidenceScore: conf,
 			DistribusiKelas: map[string]float64{
-				"Daun Sehat":                    0.03,
-				"Bercak Daun Cercospora":        0.93,
-				"Virus Kuning / Keriting":       0.02,
-				"Hawar Daun Phytophthora":       0.02,
+				"Daun Sehat":              0.03,
+				"Bercak Daun Cercospora":  0.93,
+				"Virus Kuning / Keriting": 0.02,
+				"Hawar Daun Phytophthora": 0.02,
 			},
 			WaktuInferensiMs:    135,
 			IsDemoMode:          true,
@@ -199,10 +313,10 @@ func (v *ExternalVisionAdapter) runDemoMode(imgType, filename string) (*models.H
 			KelasTerdeteksi: kelas,
 			ConfidenceScore: conf,
 			DistribusiKelas: map[string]float64{
-				"Buah Sehat":                    0.02,
-				"Antraknosa / Patek":            0.92,
-				"Busuk Basah Phytophthora":      0.04,
-				"Kerusakan Fisik Pascapanen":    0.02,
+				"Buah Sehat":                 0.02,
+				"Antraknosa / Patek":         0.92,
+				"Busuk Basah Phytophthora":   0.04,
+				"Kerusakan Fisik Pascapanen": 0.02,
 			},
 			WaktuInferensiMs:    152,
 			IsDemoMode:          true,
@@ -230,10 +344,10 @@ func (v *ExternalVisionAdapter) runDemoMode(imgType, filename string) (*models.H
 			KelasTerdeteksi: kelas,
 			ConfidenceScore: conf,
 			DistribusiKelas: map[string]float64{
-				"Mentah (Hijau Penuh)":                  0.01,
-				"Mulai Matang (Peralihan)":              0.02,
-				"Matang Sempurna (Merah Cerah)":          0.96,
-				"Terlalu Matang / Layu":                 0.01,
+				"Mentah (Hijau Penuh)":          0.01,
+				"Mulai Matang (Peralihan)":      0.02,
+				"Matang Sempurna (Merah Cerah)": 0.96,
+				"Terlalu Matang / Layu":         0.01,
 			},
 			WaktuInferensiMs:    110,
 			IsDemoMode:          true,
@@ -256,4 +370,3 @@ func (v *ExternalVisionAdapter) AnalyzeFruit(imageBytes []byte, filename string)
 func (v *ExternalVisionAdapter) AnalyzeRipeness(imageBytes []byte, filename string) (*models.HasilDeteksi, error) {
 	return v.callExternalInference("ripeness", imageBytes, filename)
 }
-
