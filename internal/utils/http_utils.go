@@ -1,9 +1,44 @@
 package utils
 
 import (
+	"bufio"
 	"encoding/json"
 	"net/http"
+	"os"
+	"strings"
 )
+
+// LoadEnv membaca file .env dan menyetel environment variables jika belum disetel
+func LoadEnv(filenames ...string) {
+	if len(filenames) == 0 {
+		filenames = []string{".env", "../.env", "../../.env"}
+	}
+	for _, fn := range filenames {
+		file, err := os.Open(fn)
+		if err != nil {
+			continue
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.TrimSpace(parts[1])
+				v = strings.Trim(v, `"'`)
+				if os.Getenv(k) == "" {
+					os.Setenv(k, v)
+				}
+			}
+		}
+		break
+	}
+}
 
 // EnableCORS menyetel header CORS standar
 func EnableCORS(w http.ResponseWriter, r *http.Request) bool {

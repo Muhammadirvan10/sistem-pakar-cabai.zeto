@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"cabai-care/internal/models"
+	"cabai-care/internal/utils"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ type ExternalVisionAdapter struct {
 }
 
 func NewVisionService() VisionService {
+	utils.LoadEnv()
 	url := os.Getenv("AI_INFERENCE_URL")
 	key := os.Getenv("AI_API_KEY")
 	ver := os.Getenv("AI_MODEL_VERSION")

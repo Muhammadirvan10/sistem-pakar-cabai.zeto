@@ -2,6 +2,7 @@ package main
 
 import (
 	"cabai-care/api"
+	"cabai-care/internal/utils"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 )
 
 func main() {
+	utils.LoadEnv()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
