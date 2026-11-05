@@ -1,4 +1,4 @@
-package api
+package handlers
 
 import (
 	"cabai-care/pkg/database"
@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// GejalaHandler menangani endpoint /api/gejala
-func GejalaHandler(w http.ResponseWriter, r *http.Request) {
+// PenyakitHandler menangani endpoint /api/penyakit
+func PenyakitHandler(w http.ResponseWriter, r *http.Request) {
 	if utils.EnableCORS(w, r) {
 		return
 	}
@@ -19,51 +19,65 @@ func GejalaHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		gejalaList, err := store.GetGejala()
+		id := r.URL.Query().Get("id")
+		if id != "" {
+			p, err := store.GetPenyakitByID(id)
+			if err != nil {
+				utils.WriteError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"data":    p,
+			})
+			return
+		}
+
+		list, err := store.GetPenyakit()
 		if err != nil {
-			utils.WriteError(w, http.StatusInternalServerError, "Gagal mengambil data gejala: "+err.Error())
+			utils.WriteError(w, http.StatusInternalServerError, "Gagal mengambil data penyakit: "+err.Error())
 			return
 		}
 		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
-			"data":    gejalaList,
-			"total":   len(gejalaList),
+			"data":    list,
+			"total":   len(list),
 		})
 
 	case http.MethodPost:
-		var g models.Gejala
-		if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		var p models.Penyakit
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			utils.WriteError(w, http.StatusBadRequest, "Format JSON tidak valid")
 			return
 		}
-		if g.ID == "" || g.NamaGejala == "" {
-			utils.WriteError(w, http.StatusBadRequest, "ID (kode gejala) dan nama gejala wajib diisi")
+		if p.ID == "" || p.NamaPenyakit == "" {
+			utils.WriteError(w, http.StatusBadRequest, "ID dan nama penyakit wajib diisi")
 			return
 		}
-		if err := store.CreateGejala(g); err != nil {
+		if err := store.CreatePenyakit(p); err != nil {
 			utils.WriteError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 			"success": true,
-			"message": "Gejala berhasil ditambahkan",
-			"data":    g,
+			"message": "Data penyakit berhasil disimpan",
+			"data":    p,
 		})
 
 	case http.MethodPut:
-		var g models.Gejala
-		if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		var p models.Penyakit
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			utils.WriteError(w, http.StatusBadRequest, "Format JSON tidak valid")
 			return
 		}
-		if err := store.UpdateGejala(g); err != nil {
+		if err := store.UpdatePenyakit(p); err != nil {
 			utils.WriteError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
-			"message": "Gejala berhasil diperbarui",
-			"data":    g,
+			"message": "Data penyakit berhasil diperbarui",
+			"data":    p,
 		})
 
 	case http.MethodDelete:
@@ -75,16 +89,16 @@ func GejalaHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if id == "" {
-			utils.WriteError(w, http.StatusBadRequest, "Parameter id gejala diperlukan")
+			utils.WriteError(w, http.StatusBadRequest, "Parameter id penyakit diperlukan")
 			return
 		}
-		if err := store.DeleteGejala(id); err != nil {
+		if err := store.DeletePenyakit(id); err != nil {
 			utils.WriteError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
-			"message": "Gejala berhasil dihapus",
+			"message": "Penyakit berhasil dihapus",
 		})
 
 	default:

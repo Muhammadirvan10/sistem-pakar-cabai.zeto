@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cabai-care/api"
+	handler "cabai-care/api"
 	"cabai-care/pkg/utils"
 	"fmt"
 	"log"
@@ -19,8 +19,8 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Dispatch semua request /api/* ke handler Vercel
-	mux.HandleFunc("/api/", api.Handler)
-	mux.HandleFunc("/api", api.Handler)
+	mux.HandleFunc("/api/", handler.Handler)
+	mux.HandleFunc("/api", handler.Handler)
 
 	fmt.Println("==================================================")
 	fmt.Println("  CABAI CARE - BACKEND REST API GOLANG RUNTIME    ")
@@ -33,4 +33,3 @@ func main() {
 		log.Fatalf("Gagal menjalankan server: %v", err)
 	}
 }
-

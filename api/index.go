@@ -1,6 +1,7 @@
-package api
+package handler
 
 import (
+	"cabai-care/pkg/handlers"
 	"cabai-care/pkg/utils"
 	"net/http"
 	"strings"
@@ -13,39 +14,38 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := strings.Trim(r.URL.Path, "/")
-	// e.g. "api/gejala" or "gejala"
+	// Contoh: "api/gejala" atau "gejala"
 	parts := strings.Split(path, "/")
 	if len(parts) > 0 && parts[0] == "api" {
 		parts = parts[1:]
 	}
 
 	if len(parts) == 0 {
-		HealthHandler(w, r)
+		handlers.HealthHandler(w, r)
 		return
 	}
 
 	route := parts[0]
 	switch route {
 	case "health":
-		HealthHandler(w, r)
+		handlers.HealthHandler(w, r)
 	case "gejala":
-		GejalaHandler(w, r)
+		handlers.GejalaHandler(w, r)
 	case "penyakit":
-		PenyakitHandler(w, r)
+		handlers.PenyakitHandler(w, r)
 	case "aturan":
-		AturanHandler(w, r)
+		handlers.AturanHandler(w, r)
 	case "diagnosis":
-		DiagnosisHandler(w, r)
+		handlers.DiagnosisHandler(w, r)
 	case "detect":
-		DetectHandler(w, r)
+		handlers.DetectHandler(w, r)
 	case "history":
-		HistoryHandler(w, r)
+		handlers.HistoryHandler(w, r)
 	case "auth":
-		AuthHandler(w, r)
+		handlers.AuthHandler(w, r)
 	case "admin":
-		AdminHandler(w, r)
+		handlers.AdminHandler(w, r)
 	default:
 		utils.WriteError(w, http.StatusNotFound, "Rute API tidak ditemukan: /"+path)
 	}
 }
-
