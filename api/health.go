@@ -1,7 +1,7 @@
 package api
 
 import (
-	"cabai-care/internal/utils"
+	"cabai-care/pkg/utils"
 	"net/http"
 	"time"
 )

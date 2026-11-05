@@ -1,10 +1,10 @@
 package api
 
 import (
-	"cabai-care/internal/database"
-	"cabai-care/internal/models"
-	"cabai-care/internal/services"
-	"cabai-care/internal/utils"
+	"cabai-care/pkg/database"
+	"cabai-care/pkg/models"
+	"cabai-care/pkg/services"
+	"cabai-care/pkg/utils"
 	"encoding/base64"
 	"fmt"
 	"io"

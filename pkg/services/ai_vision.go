@@ -2,8 +2,8 @@ package services
 
 import (
 	"bytes"
-	"cabai-care/internal/models"
-	"cabai-care/internal/utils"
+	"cabai-care/pkg/models"
+	"cabai-care/pkg/utils"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"

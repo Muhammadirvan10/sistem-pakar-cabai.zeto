@@ -1,7 +1,7 @@
 package database
 
 import (
-	"cabai-care/internal/models"
+	"cabai-care/pkg/models"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"

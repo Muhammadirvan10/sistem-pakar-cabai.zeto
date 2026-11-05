@@ -2,7 +2,7 @@ package main
 
 import (
 	"cabai-care/api"
-	"cabai-care/internal/utils"
+	"cabai-care/pkg/utils"
 	"fmt"
 	"log"
 	"net/http"

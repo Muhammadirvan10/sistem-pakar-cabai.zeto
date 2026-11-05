@@ -1,10 +1,10 @@
 package api
 
 import (
-	"cabai-care/internal/database"
-	"cabai-care/internal/expert"
-	"cabai-care/internal/models"
-	"cabai-care/internal/utils"
+	"cabai-care/pkg/database"
+	"cabai-care/pkg/expert"
+	"cabai-care/pkg/models"
+	"cabai-care/pkg/utils"
 	"encoding/json"
 	"fmt"
 	"math/rand"

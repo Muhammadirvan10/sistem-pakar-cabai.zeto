@@ -1,7 +1,7 @@
 package expert
 
 import (
-	"cabai-care/internal/models"
+	"cabai-care/pkg/models"
 	"sort"
 	"time"
 )

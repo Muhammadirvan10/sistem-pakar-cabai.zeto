@@ -1,8 +1,8 @@
 package api
 
 import (
-	"cabai-care/internal/database"
-	"cabai-care/internal/utils"
+	"cabai-care/pkg/database"
+	"cabai-care/pkg/utils"
 	"net/http"
 	"strings"
 	"time"
